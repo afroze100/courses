@@ -1,0 +1,205 @@
+# Generic Makefile for a C or C++ physics library
+# to be used with GNU make
+#
+# Author: Olivier.Michel@cyberbotics.com
+# and Edmund Ronald <eronald@polytechnique.fr>
+# Date:   October 12th, 1999.
+#
+# The Makefile in the physics directory is very easy to write:
+#
+# for a simple library (a single source file), just include this line:
+# include ../Makefile.include
+#
+# for a library with several C sources files, the Makefile should be:
+# C_SOURCES = my_library.c my_clever_algo.c my_gui.c
+# include ../Makefile.include
+#
+# for a library with several C++ source files, the Makefile should be:
+# CC_SOURCES = my_library.cc my_clever_algo.cc my_gui.cc
+# include ../Makefile.include
+#
+# or:
+# include ../Makefile.include
+# CPP_SOURCES = my_physics.cpp my_clever_algo.cpp my_gui.cpp
+#
+# if your library needs additional libraries,
+# simply prepend the following line to the Makefile:
+# LIBRARIES=-L/path/to/my/library -lmy_library -lmy_other_library
+#
+# if some special CFLAGS need to be passed, for example to find include
+# files, or set optimization level, simply prepend the following line:
+# CFLAGS=-O3 -I/my_library_path/include
+#
+# finally, on Windows, if you want that your library opens up a DOS
+# console to display the printf output, simply add the following line:
+# DOS_CONSOLE=1
+
+ifndef OSTYPE
+OSTYPE=$(shell uname)
+endif
+
+ifeq ($(OSTYPE),Linux)
+OSTYPE=linux
+endif
+
+ifeq ($(OSTYPE),linux-gnu)
+OSTYPE=linux
+endif
+
+ifeq ($(OSTYPE),)
+OSTYPE=windows
+endif
+
+ifeq ($(OSTYPE),msys)
+OSTYPE=windows
+endif
+
+ifneq ($(findstring MINGW,$(OSTYPE)),)
+OSTYPE=windows
+endif
+
+ifneq ($(findstring CYGWIN,$(OSTYPE)),)
+OSTYPE=windows
+endif
+
+ifeq ($(OSTYPE),Darwin)
+OSTYPE=darwin
+endif
+
+ifndef DOS_CONSOLE
+WINDOWS_APP=-mwindows
+endif
+
+ifeq ($(OSTYPE),windows)
+PLATFORM_CFLAG=-DWIN32
+endif
+
+ifeq ($(OSTYPE),linux)
+PLATFORM_CFLAG=-DLINUX
+endif
+
+ifeq ($(OSTYPE),darwin)
+PLATFORM_CFLAG=-DMACOS
+endif
+
+ifndef WEBOTS_HOME
+export WEBOTS_HOME=/usr/local/webots
+endif
+
+# compute the current directory, the CURDIR variable may be already set
+ifndef CURDIR
+CURDIR := $(shell pwd)
+endif
+
+# compute the name of the library from its directory (i.e. braiten)
+BAD_NAME = $(basename $(notdir $(CURDIR)))
+
+# this is a hack to work around a problem with spaces in dir names
+NAME = $(word $(words $(BAD_NAME)),$(BAD_NAME))
+
+# if the source files were not explicitly defined, we assume that
+# there is only one C or Java source file
+
+ifndef C_SOURCES
+C_SOURCES   =$(shell ls $(NAME).c 2>/dev/null)
+endif
+ifndef CPP_SOURCES
+CPP_SOURCES =$(shell ls $(NAME).cpp 2>/dev/null)
+endif
+ifndef CC_SOURCES
+CC_SOURCES  =$(shell ls $(NAME).cc 2>/dev/null)
+endif
+
+INCLUDE=-I$(WEBOTS_HOME)/include
+
+ifeq ($(OSTYPE),windows)
+EXE_EXTENSION=.dll
+else
+ifeq ($(OSTYPE),darwin)
+EXE_EXTENSION=.dylib
+else
+EXE_EXTENSION=.so
+endif
+endif
+
+# the objects files result from the C or C++ sources
+C_OBJECTS   = $(C_SOURCES:.c=.o)
+CPP_OBJECTS = $(CPP_SOURCES:.cpp=.o)
+CC_OBJECTS  = $(CC_SOURCES:.cc=.o)
+RC_OBJECTS  = $(RC_SOURCES:.rc=.o)
+
+# set CC to your favorit C or C++ compiler
+ifneq ($(C_SOURCES),)
+CC=gcc
+else
+ifneq ($(CPP_SOURCES),)
+CC=g++
+else
+ifneq ($(CC_SOURCES),)
+CC=g++
+else
+CC=gcc
+endif
+endif
+endif
+
+ifneq ($(OSTYPE),windows)
+PLATFORM_LIBS=
+else
+PLATFORM_LIBS=-lmingw32 $(WINDOWS_APP)
+endif
+
+LIBRARY=$(PLATFORM_LIBS) $(LIBRARIES)
+
+ifeq ($(OSTYPE),windows)
+CFLAGS_WIN=$(WINDOWS_APP) -DWIN32
+WINSTUFF=-L$(WEBOTS_HOME)/lib -lode
+else
+WINSTUFF=
+endif
+
+ifeq ($(OSTYPE),darwin)
+LINK_OPTS=-dynamiclib -flat_namespace -undefined suppress -install_name $(NAME).dylib -compatibility_version 1.0 -current_version 1.0.0
+else
+LINK_OPTS=-shared -fPIC
+endif
+
+# set the C compiler options
+CC_OPTS=-c $(INCLUDE) $(CC_OPTS_DEMO) -Wall $(CFLAGS) $(CFLAGS_WIN) $(PLATFORM_CFLAG) -fPIC
+
+TARGET=$(NAME)$(EXE_EXTENSION)
+
+# rules to make the executable file from C/C++ objects
+$(NAME)$(EXE_EXTENSION): $(C_OBJECTS) $(CC_OBJECTS) $(CPP_OBJECTS) $(RC_OBJECTS)
+	$(CC) $(LINK_OPTS) -o $(NAME)$(EXE_EXTENSION) $(C_OBJECTS) $(CC_OBJECTS) $(CPP_OBJECTS) $(RC_OBJECTS) $(LIBRARY) $(WINSTUFF)
+	$(EXTRA_FINAL_CMD)
+
+# rule to make automatic dependencies
+# adapted from the GNU make info file
+%.d:%.c
+	@$(SHELL) -ec '$(CC) $(INCLUDE) -MM $< \
+	| sed '\''s/\($*\)\.o[ :]*/\1.o $@ : /g'\'' > $@; \
+	[ -s $@ ] || rm -f $@'
+
+-include $(C_SOURCES:.c=.d) $(CC_SOURCES:.cc=.d) $(CPP_SOURCES:.cpp=.d)
+
+# generic rule to make the object files
+%.o:%.c
+	$(CC) $(CC_OPTS) $<
+
+%.o:%.cpp
+	$(CC) $(CC_OPTS) $<
+
+%.o:%.cc
+	$(CC) $(CC_OPTS) $<
+
+%.o:%.rc
+	windres -i $< -o $@ --include-dir ../../../../software/wxWindows/include --define __WIN32__ --define __WIN95__ --define __GNUWIN32__
+
+# how to clean up the directory
+clean:
+	@-rm -f *.o *.so *.d *~ $(NAME)$(EXE_EXTENSION) core
+
+# show the ostype recognized by the Makefile
+ostype:
+	@echo OSTYPE=$(OSTYPE)

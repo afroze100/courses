@@ -1,0 +1,28 @@
+clear
+clc
+
+    robots = zeros(1,15);
+    
+    right = 0;
+    left = 0;
+
+    for i=1:15
+        if rand(1) >= 0.5
+            robots(i) = 2;
+            right = right + 1;
+        else
+            robots(i) = 1;
+            left = left + 1;
+        end
+    end
+    
+    if right > left
+        for i=1:15
+            if robots(i) == 1;
+                if 
+    
+    
+
+
+
+        
